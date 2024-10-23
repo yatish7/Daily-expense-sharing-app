@@ -25,9 +25,6 @@ The **Daily Expense Sharing App** is a web application designed to help users ma
 
 ## Technologies Used
 
-- **Frontend**: 
-  - React.js
-  - HTML5, CSS3, JavaScript
 - **Backend**:
   - Node.js
   - Express.js
@@ -57,15 +54,15 @@ To get started with the Daily Expense Sharing App, follow these steps:
 4. **Set up the environment**:
    Create a `.env` file in the root directory and add the necessary environment variables. Example:
    ```
-   MONGODB_URI=mongodb://localhost:27017/your_database_name
-   PORT=5000
+   MONGODB_URI="Your MONGO URI"
+   PORT= YOUR PORT
    ```
 
 5. **Run the application**:
    ```bash
    npm start
    ```
-   The application will be available at `http://localhost:5000`.
+   The application will be available at `http://localhost:PORT`.
 
 ## Usage
 
