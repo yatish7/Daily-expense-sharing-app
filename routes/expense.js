@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const mongoose = require('mongoose');  // Add mongoose to use ObjectId conversion
 const Expense = require('../models/Expense');
 const { validateSplit } = require('../helpers/validations');
 const { calculateSplit } = require('../helpers/splitCalculations');
@@ -17,50 +18,93 @@ router.post('/',
   ],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
 
     const { creator, amount, description, splitMethod, participants } = req.body;
 
-    // Validate split method and participants
     try {
-      validateSplit(splitMethod, participants);
-    } catch (error) {
-      return res.status(400).json({ error: error.message });
-    }
+      // Convert the creator and participants.user to ObjectId using 'new'
+      const creatorId = new mongoose.Types.ObjectId(creator);  // Convert creator to ObjectId
+      const participantsWithObjectIds = participants.map(participant => ({
+        ...participant,
+        user: new mongoose.Types.ObjectId(participant.user) // Convert each user in participants to ObjectId
+      }));
 
-    try {
+      // Validate split method and participants
+      validateSplit(splitMethod, participantsWithObjectIds);
+
       // Calculate the split amounts based on the method
-      const calculatedParticipants = calculateSplit(splitMethod, amount, participants);
+      const calculatedParticipants = calculateSplit(splitMethod, amount, participantsWithObjectIds);
 
+      // Create and save the new expense
       const expense = new Expense({
-        creator,
+        creator: creatorId,
         amount,
         description,
         splitMethod,
-        participants: calculatedParticipants
+        participants: calculatedParticipants,
       });
 
       await expense.save();
       res.status(201).json(expense);
     } catch (error) {
-      res.status(500).json({ error: 'Error adding expense' });
+      console.error('MongoDB error:', error); // Log the full MongoDB error
+      res.status(500).json({ error: error.message }); // Return the full error message
     }
   }
 );
 
-// Retrieve individual user expenses
-router.get('/:userId', async (req, res) => {
-  try {
-    const expenses = await Expense.find({ 'participants.user': req.params.userId });
-    res.json(expenses);
-  } catch (error) {
-    res.status(500).json({ error: 'Error fetching expenses' });
-  }
-});
-
-// Download balance sheet
+// Balance Sheet Route
 router.get('/balance-sheet/:userId', async (req, res) => {
-  // Your implementation for balance sheet download goes here
+  const userId = req.params.userId;
+
+  try {
+    // Fetch all expenses that include the user
+    const expenses = await Expense.find({ 
+      'participants.user': new mongoose.Types.ObjectId(userId)
+    });
+
+    const balances = {};
+
+    // Initialize balances for each participant
+    expenses.forEach(expense => {
+      expense.participants.forEach(participant => {
+        const participantId = participant.user.toString();
+        
+        // Initialize balance if it doesn't exist
+        if (!balances[participantId]) {
+          balances[participantId] = {
+            totalOwed: 0,
+            totalPaid: 0,
+          };
+        }
+
+        // Calculate total owed and total paid
+        if (participantId === userId) {
+          balances[participantId].totalOwed += participant.amountOwed;
+        } else {
+          balances[participantId].totalPaid += participant.amountOwed;
+        }
+      });
+    });
+
+    // Format the balance sheet output
+    const balanceSheet = Object.keys(balances).map(id => {
+      return {
+        userId: id,
+        totalOwed: balances[id].totalOwed,
+        totalPaid: balances[id].totalPaid,
+        balance: balances[id].totalPaid - balances[id].totalOwed,
+      };
+    });
+
+    res.json(balanceSheet);
+  } catch (error) {
+    console.error('Error fetching balance sheet:', error);
+    res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
 });
 
 module.exports = router;
